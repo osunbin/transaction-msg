@@ -122,7 +122,7 @@ public class TxMsgHandler {
         logger.info("transaction Msg Handler close");
     }
 
-
+    // 同步处理导致请求时间变长
     public void sendMsg(TxMsgModel txMsgModel) {
         Message message = buildMessage(txMsgModel);
         try {
@@ -262,6 +262,7 @@ public class TxMsgHandler {
                         }
                     }
                 }
+                deleteSendedTxMsg(System.currentTimeMillis());
             }
         }
     }
