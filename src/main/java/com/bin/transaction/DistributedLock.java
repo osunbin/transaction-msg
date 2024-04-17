@@ -5,15 +5,20 @@ package com.bin.transaction;
  */
 public interface DistributedLock {
 
-    boolean isLock();
+    boolean lock();
 
 
-
+    void unLock();
 
     DistributedLock EMPTY = new DistributedLock() {
         @Override
-        public boolean isLock() {
+        public boolean lock() {
             return true;
+        }
+
+        @Override
+        public void unLock() {
+
         }
     };
 }

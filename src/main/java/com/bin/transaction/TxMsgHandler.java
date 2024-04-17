@@ -66,8 +66,6 @@ public class TxMsgHandler {
     private final TxMsgSqlStore txMsgSqlStore;
 
 
-
-
     private long lastDelete = System.currentTimeMillis();
 
     private final DistributedLock distributedLock;
@@ -75,7 +73,7 @@ public class TxMsgHandler {
     private final Object lock = new Object();
 
     private final AtomicBoolean txMsgDeliveryRun = new AtomicBoolean(false);
-    final AtomicBoolean  state = new AtomicBoolean(true);
+    final AtomicBoolean state = new AtomicBoolean(true);
 
     public TxMsgHandler(DefaultMQProducer producer, TxMsgSqlStore txMsgSqlStore,
                         DistributedLock distributedLock) {
@@ -113,7 +111,8 @@ public class TxMsgHandler {
         state.compareAndSet(true, false);
         try {
             scheService.awaitTermination(closeWaitTime, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {}
+        } catch (InterruptedException e) {
+        }
 
         if (!scheService.isShutdown()) {
             scheService.shutdownNow();
@@ -237,32 +236,38 @@ public class TxMsgHandler {
         public void run() {
             if (state.get()) {
 
-                if (distributedLock.isLock()) {
-                    int count = 0;
-                    int num = LIMIT_NUM;
-                    while (num == LIMIT_NUM && count < MAX_DEAL_NUM_ONE_TIME) {
-                        List<TxMsgModel> history = txMsgSqlStore.getHistory(LIMIT_NUM);
-                        num = history.size();
-                        count += num;
+                if (distributedLock.lock()) {
 
-                        for (TxMsgModel txMsgModel : history) {
-                            try {
-                                Message message = buildMessage(txMsgModel);
+                    try {
+                        int count = 0;
+                        int num = LIMIT_NUM;
+                        while (num == LIMIT_NUM && count < MAX_DEAL_NUM_ONE_TIME) {
+                            List<TxMsgModel> history = txMsgSqlStore.getHistory(LIMIT_NUM);
+                            num = history.size();
+                            count += num;
 
-                                SendResult send = producer.send(message);
-                                logger.info("msgId {} topic {} tag {} sendTxMsg result {}", txMsgModel.getId(), message.getTopic(), message.getTags(), send);
-                                if (send != null && send.getSendStatus() == SendStatus.SEND_OK) {
-                                    // 修改数据库的状态
-                                    int res = txMsgSqlStore.updateSendMsg(txMsgModel);
-                                    logger.debug("msgId {} updateMsgStatus success res {}", txMsgModel.getId(), res);
+                            for (TxMsgModel txMsgModel : history) {
+                                try {
+                                    Message message = buildMessage(txMsgModel);
+
+                                    SendResult send = producer.send(message);
+                                    logger.info("msgId {} topic {} tag {} sendTxMsg result {}", txMsgModel.getId(), message.getTopic(), message.getTags(), send);
+                                    if (send != null && send.getSendStatus() == SendStatus.SEND_OK) {
+                                        // 修改数据库的状态
+                                        int res = txMsgSqlStore.updateSendMsg(txMsgModel);
+                                        logger.debug("msgId {} updateMsgStatus success res {}", txMsgModel.getId(), res);
+                                    }
+                                } catch (Exception e) {
+                                    logger.error("HistoryTxMsg do fail", e);
                                 }
-                            } catch (Exception e) {
-                                logger.error("HistoryTxMsg do fail", e);
                             }
                         }
+                        deleteSendedTxMsg(System.currentTimeMillis());
+                    } finally {
+                        distributedLock.unLock();
                     }
                 }
-                deleteSendedTxMsg(System.currentTimeMillis());
+
             }
         }
     }
